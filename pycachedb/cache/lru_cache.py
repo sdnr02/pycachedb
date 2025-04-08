@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Union, Any, Dict
 
 from pycachedb.cache.base import Cache
+from pycachedb.data_structures.hash_table import HashTable
 from pycachedb.data_structures.linked_list import Node, DoublyLinkedList
 
 class LRUCache(Cache):
@@ -16,8 +17,8 @@ class LRUCache(Cache):
         super.__init__(capacity)
         # Intializing the DoublyLinkedList object
         self.dll = DoublyLinkedList()
-        # Creating a hash map that maps key value to the next node
-        self.cache_map: Dict[Union[int,str],Node] = {}
+        # Creating a hash map that maps key value to the next node by initializing the Hash Table class
+        self.cache_map = HashTable(size=1024)
 
     def get(self, key: Union[int, str]) -> Any:
         """
@@ -29,21 +30,23 @@ class LRUCache(Cache):
         Returns:
             The value associated with the key, or None if not found
         """
-        if key not in self.cache_map:
-            return None
+        try:
+            # Trying to retrieve the node from the hash map
+            node = self.cache_map.get(key)
+            value = node.value
+
+            self._remove_node(node)
+
+            # Adding it back to the head position in the list
+            self.dll.insert_to_head(key,value)
+
+            # Updating the reference in the hash table
+            self.cache_map.set(key,self.dll.head.next)
+
+            return value
         
-        # Getting the node and its value if in the hash map
-        node = self.cache_map[key]
-        value = node.value
-
-        self._remove_node(node)
-
-        # Adding it back to the head position in the list
-        self.dll.insert_to_head(key,value)
-
-        self.cache_map[key] = self.dll.head.next
-
-        return value
+        except KeyError:
+            return None
     
     def put(self, key: Union[int, str], value: Any) -> None:
         """
@@ -54,22 +57,55 @@ class LRUCache(Cache):
             value: The value to be cached
         """
 
-        # If the key exists, we need to update its value and move it to the front
-        if key in self.cache_map:
-            self._remove_node(self.cache_map[key])
+        try:        
+            # If the key exists, we need to update its value and move it to the front
+            node = self.cache_map.get(key)
+            self._remove_node(node)
             self.dll.insert_to_head(key,value)
-            self.cache_map[key] = self.dll.head.next
+            self.cache_map.set(key, self.dll.head.next)
+            return
 
+        except KeyError:
+            # If the key doesn't exist, we continue with the insertion process
+            pass
+
+        # Checking the capacity and evicting the oldest node
         if self.current_size >= self.capacity:
             lru_node = self.dll.delete_at_end()
             if lru_node and lru_node.key is not None:
-                del self.cache_map[lru_node.key]
-                self.current_size -= 1
+                self.cache_map.delete(lru_node.key)
+                self.current_size = self.current_size - 1
 
         # Adding the new item to the head (most recently used)
-        self.dll.insert_to_head(key, value)
-        self.cache_map[key] = self.dll.head.next
-        self.current_size += 1
+        self.dll.insert_to_head(key,value)
+        self.cache_map.set(key,self.dll.head.next)
+        self.current_size = self.current_size + 1
+
+    def delete(self, key: Union[int, str]) -> bool:
+        """
+        Removes an item from the cache
+
+        Args:
+            key: The key to remove
+
+        Returns:
+            True if the key was found and retrieved, False otherwise
+        """
+        try:
+            node = self.cache_map.get(key)
+            self._remove_node(node)
+            self.cache_map.delete(key)
+            self.current_size = self.current_size - 1
+            return True
+
+        except KeyError:
+            return False
+    
+    def clear(self) -> None:
+        """Clears all items from the cache"""
+        self.dll = DoublyLinkedList()
+        self.cache_map = HashTable(size=1024)
+        self.current_size = 0
 
     def _remove_node(self, node: Node) -> None:
         """
@@ -87,4 +123,4 @@ class LRUCache(Cache):
         node.prev = None
         
         # Updating the size of the linked list
-        self.dll.size -= 1
+        self.dll.size = self.dll.size - 1
