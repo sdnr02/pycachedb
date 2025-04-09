@@ -133,14 +133,16 @@ class DoublyLinkedList:
         self.size -= 1
         return node_to_remove
 
-
+    
     def __str__(self):
         if self.size == 0:
             print("The list is empty")
-            return
+            return ""
         
+        result = ""
         n = self.head.next
         while n != self.tail:
-            print(f"Key: {n.key}, Value: {n.value}")
+            result += f"Key: {n.key}, Value: {n.value}\n"
             n = n.next
-        print("\n")
+        
+        return result

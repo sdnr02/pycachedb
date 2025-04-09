@@ -14,7 +14,7 @@ class LRUCache(Cache):
         Args:
             capacity: Maximum number of items the cache can hold
         """
-        super.__init__(capacity)
+        super().__init__(capacity)
         # Intializing the DoublyLinkedList object
         self.dll = DoublyLinkedList()
         # Creating a hash map that maps key value to the next node by initializing the Hash Table class
@@ -56,6 +56,17 @@ class LRUCache(Cache):
             key: The key for the item
             value: The value to be cached
         """
+
+        # Adding an early return if capacity is zero and it's a new key
+        if self.capacity == 0:
+            try:
+                node = self.cache_map.get(key)
+                # If this key exists we must remove it
+                self._remove_node(node)
+                return
+            except KeyError:
+                # If the key doesn't exist, we shouldn't add it since capacity is zero
+                return
 
         try:        
             # If the key exists, we need to update its value and move it to the front

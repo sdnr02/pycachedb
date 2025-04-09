@@ -7,7 +7,7 @@ from pycachedb.data_structures.linked_list import Node, DoublyLinkedList
 
 class LFUCache(Cache):
 
-    def __init__(self,capacity: int = 128) -> None:
+    def __init__(self, capacity: int = 128) -> None:
         """
         Initializes the Least Frequently Used Cache
 
@@ -34,10 +34,10 @@ class LFUCache(Cache):
             key: The key to retrieve
         """
         try:
-            # Trying to get the value, returns None
+            # Trying to get the value
             value = self.cache_map.get(key)
 
-            # If found, increment frequency
+            # If found, we increment frequency
             self._increment_frequency(key)
             return value
         
@@ -52,19 +52,20 @@ class LFUCache(Cache):
             key: The key for the item
             value: The value to be cached
         """
-        # If its at capacity and this is a new key, remove the least frequently used
+        # If capacity is zero or negative, we don't add anything
         if self.capacity <= 0:
             return
         
         try:
             # Updating the existing key
             self.cache_map.get(key)
-            self.cache_map.set(key,value)
+            self.cache_map.set(key, value)
             self._increment_frequency(key)
             return
         
         except KeyError:
-            # New Key
+
+            # Check if we need to evict before adding
             if self.current_size >= self.capacity:
                 # Evicting the least frequently used item
                 self._evict()
@@ -74,9 +75,15 @@ class LFUCache(Cache):
                 self.frequency_lists[1] = DoublyLinkedList()
             
             # Adding to frequency 1 list
-            self.frequency_lists[1].insert_to_head(key,value)
+            self.frequency_lists[1].insert_to_head(key, value)
+            
+            # Storing the value in the cache_map
+            self.cache_map.set(key, value)
+            
+            # Setting initial frequency to 1
+            self.frequency_map.set(key, 1)
 
-            # Storing the reference to the nodes
+            # Storing the reference to the node
             node = self.frequency_lists[1].head.next
             self.key_to_node_map.set(key, node)
 
@@ -84,7 +91,7 @@ class LFUCache(Cache):
             self.min_frequency = 1
             self.current_size = self.current_size + 1
 
-    def delete(self, key: Union[str,int]) -> bool:
+    def delete(self, key: Union[str, int]) -> bool:
         """
         Removes an item from the cache.
         
@@ -109,7 +116,7 @@ class LFUCache(Cache):
 
             # Updating the minimum frequency if needed
             if frequency == self.min_frequency and self.frequency_lists[frequency].size == 0:
-                # Finding the next non-empty frequence
+                # Finding the next non-empty frequency
                 self.min_frequency = 0
                 for f in sorted(self.frequency_lists.keys()):
                     if self.frequency_lists[f].size > 0:
@@ -139,34 +146,36 @@ class LFUCache(Cache):
         Args:
             key: The key to update
         """
-        current_frequency = self.frequency_map.get(key)
-        value = self.cache_map.get(key)
-        node = self.key_to_node_map.get(key)
+        try:
+            current_frequency = self.frequency_map.get(key)
+            value = self.cache_map.get(key)
+            node = self.key_to_node_map.get(key)
 
-        # Removing the node from the frequency linked list
-        self._remove_node_from_list(node,current_frequency)
+            # Removing the node from the current frequency linked list
+            self._remove_node_from_list(node, current_frequency)
 
-        # Incrementing the frequency
-        new_frequency = current_frequency + 1
-        self.frequency_map.set(key, new_frequency)
+            # Incrementing the frequency
+            new_frequency = current_frequency + 1
+            self.frequency_map.set(key, new_frequency)
 
-        # Creating the frequency linked list if it doesn't exist
-        if new_frequency not in self.frequency_lists:
-            self.frequency_lists[new_frequency] = DoublyLinkedList()
+            # Creating the frequency linked list if it doesn't exist
+            if new_frequency not in self.frequency_lists:
+                self.frequency_lists[new_frequency] = DoublyLinkedList()
 
-        # Adding to the new frequency list 
-        self.frequency_lists[new_frequency].insert_to_head(key,value)
-        self.key_to_node_map.set(key,self.frequency_lists[new_frequency].head.next)
+            # Adding to the new frequency list 
+            self.frequency_lists[new_frequency].insert_to_head(key, value)
+            self.key_to_node_map.set(key, self.frequency_lists[new_frequency].head.next)
 
-        # If the older frequency was the minimum and its list is now empty, we must increment the minimum frequency
-        if current_frequency == self.min_frequency and self.frequency_lists[current_frequency].size == 0:
-            self.min_frequency = new_frequency
-
-            # Finding the true minimum frequency from non empty lists
-            for f in sorted(self.frequency_lists.keys()):
-                if self.frequency_lists[f].size > 0:
-                    self.min_frequency = f
-                    break
+            # If the old frequency was the minimum and its list is now empty, we update min_frequency
+            if current_frequency == self.min_frequency and self.frequency_lists[current_frequency].size == 0:
+                # Finding the new minimum frequency
+                for f in sorted(self.frequency_lists.keys()):
+                    if f > current_frequency and self.frequency_lists[f].size > 0:
+                        self.min_frequency = f
+                        break
+                    
+        except KeyError:
+            return
 
     def _remove_node_from_list(self, node: Node, frequency: int) -> None:
         """
@@ -176,6 +185,14 @@ class LFUCache(Cache):
             node: The node to remove
             freq: The frequency of the node
         """
+        if frequency not in self.frequency_lists or node is None:
+            return
+            
+        # Making sure the frequency list exists and has nodes
+        freq_list = self.frequency_lists[frequency]
+        if freq_list.size == 0:
+            return
+
         # Updating the next and prev pointers to remove the node
         node.prev.next = node.next
         node.next.prev = node.prev
@@ -193,25 +210,46 @@ class LFUCache(Cache):
             return
         
         # Getting the frequency list with minimum frequency
-        min_frequency_list = self.frequency_lists[self.min_frequency]
+        min_frequency_list = self.frequency_lists.get(self.min_frequency)
+        if min_frequency_list is None or min_frequency_list.size == 0:
+            # If the list is empty or doesn't exist, we find the next minimum frequency
+            next_min = float('inf')
+            for freq in self.frequency_lists:
+                if freq > self.min_frequency and self.frequency_lists[freq].size > 0:
+                    next_min = min(next_min, freq)
+            
+            if next_min != float('inf'):
+                self.min_frequency = next_min
+                min_frequency_list = self.frequency_lists[self.min_frequency]
+            else:
+                # No items to evict
+                return
 
         # Removing the least recently used item from this frequency
         lfu_node = min_frequency_list.delete_at_end()
 
         if lfu_node and lfu_node.key is not None:
-            # Removing the key from the hash maps
-            self.cache_map.delete(lfu_node.key)
-            self.frequency_map.delete(lfu_node.key)
-            self.key_to_node_map.delete(lfu_node.key)
 
-            # If this frequency is now empty, we'll find a new minimum on the next insertion
-            if min_frequency_list.size == 0:
-                # Finding the next non-empty frequency
-                for f in sorted(self.frequency_lists.keys()):
-                    if f > self.min_frequency and self.frequency_lists[f].size > 0:
-                        self.min_frequency = f
-                        break
-                else:
-                    self.min_frequency = 0
+            try:
+                # Removing the key from the hash maps
+                self.cache_map.delete(lfu_node.key)
+                self.frequency_map.delete(lfu_node.key)
+                self.key_to_node_map.delete(lfu_node.key)
 
-            self.current_size = self.current_size - 1
+                # If this frequency is now empty, we'll find a new minimum
+                if min_frequency_list.size == 0:
+                    # Finding the next non-empty frequency
+                    next_min = float('inf')
+                    for f in self.frequency_lists:
+                        if f > self.min_frequency and self.frequency_lists[f].size > 0:
+                            next_min = min(next_min, f)
+                    
+                    if next_min != float('inf'):
+                        self.min_frequency = next_min
+                    else:
+                        self.min_frequency = 0
+
+                self.current_size = self.current_size - 1
+
+            except KeyError:
+                pass
