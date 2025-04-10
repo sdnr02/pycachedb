@@ -1,5 +1,6 @@
 # Ignoring the planning document
 PLAN.md
+tree.py
 
 # Ignoring Python caching
 __pycache__/
